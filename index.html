@@ -43,6 +43,26 @@ button { background:#22c55e; color:white; border:none; cursor: pointer; font-wei
   cursor:pointer;
 }
 
+/* Estilo para a seleção de múltiplas áreas */
+.areas-container {
+  margin-top: 10px;
+  padding: 5px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.area-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  cursor: pointer;
+}
+.area-checkbox input {
+  width: auto;
+  margin: 0;
+}
+
 .reserva-ativa { background:#d1fae5; }
 .reserva-finalizada { background:#fecaca; color: #7f1d1d; }
 
@@ -78,13 +98,13 @@ button { background:#22c55e; color:white; border:none; cursor: pointer; font-wei
 
 <input type="text" id="apartamento" placeholder="Apartamento">
 
-<select id="local">
-<option value="">Selecione</option>
-<option>Academia</option>
-<option>Churrasqueira</option>
-<option>Quadra</option>
-<option>Piscina</option>
-</select>
+<label style="font-size: 13px; color: #475569; margin-top: 10px; display: block; font-weight: bold;">Selecione as Áreas:</label>
+<div class="areas-container">
+  <label class="area-checkbox"><input type="checkbox" name="locais" value="Academia"> Academia</label>
+  <label class="area-checkbox"><input type="checkbox" name="locais" value="Churrasqueira"> Churrasqueira</label>
+  <label class="area-checkbox"><input type="checkbox" name="locais" value="Quadra"> Quadra</label>
+  <label class="area-checkbox"><input type="checkbox" name="locais" value="Piscina"> Piscina</label>
+</div>
 
 <input type="text" id="novoConvidado" placeholder="Nome do convidado">
 <button class="add-btn" type="button" onclick="addConvidado()">Adicionar Convidado</button>
@@ -158,7 +178,6 @@ function resetDataHora() {
     document.getElementById('entrada').value = agora.toISOString().slice(0, 16);
 }
 
-/* CORREÇÃO DO ADICIONAR CONVIDADO (PRINCIPAL) */
 function renderTags() {
   document.getElementById("tags").innerHTML = convidadosTemp.map((n, i) =>
     `<span class="tag" onclick="removerConvidado(${i})">${n} ❌</span>`
@@ -170,11 +189,16 @@ function addConvidado() {
   const nome = input.value.trim();
 
   if (!nome) return;
-  if (convidadosTemp.length >= 10) return alert("Máximo 10 convidados!");
+  
+  if (convidadosTemp.length > 0 && convidadosTemp.length % 10 === 0) {
+    alert("Aviso: Você já adicionou " + convidadosTemp.length + " convidados nesta lista.");
+  }
+
+  if (convidadosTemp.length >= 50) return alert("Limite máximo de segurança atingido (50 convidados)!");
 
   convidadosTemp.push(nome);
-  input.value = ""; // Limpa o campo
-  renderTags();     // Atualiza visualmente as tags na tela imediatamente
+  input.value = "";
+  renderTags();
 }
 
 function removerConvidado(i) {
@@ -182,21 +206,25 @@ function removerConvidado(i) {
   renderTags();
 }
 
-/* SALVAR NO INDEXEDDB */
+/* SALVAMENTO COM MÚLTIPLAS ÁREAS EM UMA ÚNICA RESERVA */
 function salvar() {
   const apto = document.getElementById("apartamento").value.trim();
-  const local = document.getElementById("local").value;
   const entrada = document.getElementById("entrada").value;
+  
+  // Captura todas as áreas que foram marcadas (checkboxes)
+  const checkboxes = document.querySelectorAll('input[name="locais"]:checked');
+  const locaisSelecionados = [];
+  checkboxes.forEach(cb => locaisSelecionados.push(cb.value));
 
-  if (!apto || !local || !entrada) {
-    alert("Preencha todos os campos!");
+  if (!apto || locaisSelecionados.length === 0 || !entrada) {
+    alert("Preencha o apartamento, a data e selecione ao menos uma área!");
     return;
   }
 
   const novoRegistro = {
     id: Date.now(),
     apartamento: apto,
-    local,
+    local: locaisSelecionados.join(", "), // Junta as áreas por vírgula (Ex: "Academia, Piscina")
     convidados: [...convidadosTemp],
     entrada,
     saida: null
@@ -212,7 +240,11 @@ function salvar() {
     limpar();
     resetDataHora();
     listar();
-    alert("✅ Salvo com sucesso!");
+    alert("✅ Reserva registrada com sucesso!");
+  };
+
+  request.onerror = (e) => {
+    alert("Erro ao salvar no banco de dados.");
   };
 }
 
@@ -245,7 +277,12 @@ function addModal() {
   const nome = input.value.trim();
 
   if (!nome) return;
-  if (modalLista.length >= 10) return alert("Máximo 10!");
+
+  if (modalLista.length > 0 && modalLista.length % 10 === 0) {
+    alert("Aviso: Esta lista já possui " + modalLista.length + " convidados.");
+  }
+
+  if (modalLista.length >= 50) return alert("Limite máximo de segurança atingido (50 convidados)!");
 
   modalLista.push(nome);
   input.value = "";
@@ -344,7 +381,7 @@ function renderLista(listaDados) {
     lista.innerHTML += `
       <div class="item ${classe}">
         <b>Apto:</b> ${item.apartamento}<br>
-        <b>Local:</b> ${item.local}<br>
+        <b>Locais selecionados:</b> <span style="color:#1e3a8a; font-weight:bold;">${item.local}</span><br>
         <b>Convidados (${item.convidados.length}):</b><br>
         <div style="margin: 5px 0;">${tags || "Nenhum"}</div>
         <b>Entrada:</b> ${new Date(item.entrada).toLocaleString()}<br>
@@ -374,8 +411,11 @@ function limparFiltro() {
 /* LIMPAR FORMULÁRIO */
 function limpar() {
   document.getElementById("apartamento").value="";
-  document.getElementById("local").value="";
   document.getElementById("novoConvidado").value="";
+  
+  // Desmarca todas as caixas de seleção após o envio bem-sucedido
+  const checkboxes = document.querySelectorAll('input[name="locais"]');
+  checkboxes.forEach(cb => cb.checked = false);
 }
 
 /* EXPORTAR BACKUP */
